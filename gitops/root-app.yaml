@@ -1,0 +1,33 @@
+# =============================================================================
+# ROOT APPLICATION — App of Apps pattern
+#
+# This single ArgoCD Application points to the gitops/applications/ directory.
+# ArgoCD reads that directory and creates one Application per file found there.
+# Adding a new tool = add a yaml file to gitops/applications/ and push.
+# ArgoCD picks it up automatically. No manual helm install ever needed.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aiops-platform-root
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: aiops-platform
+  # Cascade delete: when root app is deleted, all child apps are deleted too
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Dinesh-Prabhakaran/aiops-platform.git
+    targetRevision: main
+    path: gitops/applications   # ArgoCD watches this directory
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true       # remove apps that no longer have a yaml file
+      selfHeal: true    # re-create apps if manually deleted
+    syncOptions:
+      - CreateNamespace=true
