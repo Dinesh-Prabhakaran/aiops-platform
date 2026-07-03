@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    purpose: aiops
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logging
+  labels:
+    purpose: aiops
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mlops
+  labels:
+    purpose: mlops
+    managed-by: argocd
