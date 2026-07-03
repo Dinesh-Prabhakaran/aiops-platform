@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/part-of: aiops-platform
   annotations:
-    argocd.argoproj.io/sync-wave: "1"    # deploy first
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   project: default
   source:
@@ -37,3 +37,19 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true   # fixes: CRD annotations too long (>256KB limit)
+      - Replace=true           # fixes: CRD replace instead of patch
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 3m
+  # Tell ArgoCD to ignore CRD differences that cause false OutOfSync
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /status
+        - /metadata/annotations
