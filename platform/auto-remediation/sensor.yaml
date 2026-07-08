@@ -32,7 +32,7 @@ spec:
       - path: body.alerts.0.labels.alertname
         type: string
         value:
-          - "PodCrashLooping"
+          - "KubePodCrashLooping"
 
   triggers:
   - template:
