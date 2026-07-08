@@ -1,0 +1,26 @@
+# ArgoCD Application for podinfo demo app
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: podinfo
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: aiops-platform
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"   # deploy after monitoring is ready
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Dinesh-Prabhakaran/aiops-platform.git
+    targetRevision: main
+    path: apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: apps
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
