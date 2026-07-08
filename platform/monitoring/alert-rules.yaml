@@ -1,37 +1,117 @@
-# =============================================================================
-# ARGOCD APPLICATION — alert-rules
-#
-# Deploys PrometheusRule from platform/monitoring/alert-rules.yaml.
-# Separated from the Helm chart Application so alert rules can be
-# updated independently without re-syncing the entire Prometheus stack.
-#
-# sync-wave "3" = deploy after Prometheus CRDs exist (wave 1)
-# =============================================================================
-apiVersion: argoproj.io/v1alpha1
-kind: Application
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
 metadata:
-  name: alert-rules
-  namespace: argocd
+  name: aiops-platform-alerts
+  namespace: monitoring
   labels:
-    app.kubernetes.io/part-of: aiops-platform
-    app.kubernetes.io/component: monitoring
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
+    release: kube-prometheus-stack
 spec:
-  project: default
-  source:
-    repoURL: https://github.com/Dinesh-Prabhakaran/aiops-platform.git
-    targetRevision: main
-    path: platform/monitoring
-    directory:
-      include: "alert-rules.yaml"   # only sync the alert rules, not helmrelease.yaml
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: monitoring
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
+  groups:
+  - name: node.rules
+    rules:
+    - alert: NodeCPUHigh
+      expr: 100 - (avg by(node) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+      for: 5m
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "Node {{ $labels.node }} CPU high"
+        description: "CPU usage is {{ $value | humanize }}% for 5 minutes"
+
+    - alert: NodeMemoryHigh
+      expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 85
+      for: 5m
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "Node {{ $labels.node }} memory high"
+        description: "Memory usage is {{ $value | humanize }}%"
+
+    - alert: NodeDiskWillFillIn4Hours
+      expr: predict_linear(node_filesystem_avail_bytes{mountpoint="/"}[1h], 4*3600) < 0
+      for: 5m
+      labels:
+        severity: critical
+        team: platform
+        type: predictive
+      annotations:
+        summary: "Node {{ $labels.node }} disk predicted full in 4 hours"
+        description: "Linear regression on last 1h of disk writes predicts exhaustion in 4h"
+
+    - alert: NodeMemoryWillExhaustIn2Hours
+      expr: predict_linear(node_memory_MemAvailable_bytes[30m], 2*3600) < 0
+      for: 10m
+      labels:
+        severity: warning
+        team: platform
+        type: predictive
+      annotations:
+        summary: "Node {{ $labels.node }} memory predicted to exhaust in 2 hours"
+        description: "Based on last 30min consumption trend, memory will be exhausted"
+
+  - name: pod.rules
+    rules:
+    - alert: PodCrashLooping
+      expr: rate(kube_pod_container_status_restarts_total[15m]) * 60 * 15 > 3
+      for: 5m
+      labels:
+        severity: critical
+        team: platform
+      annotations:
+        summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} crash looping"
+        description: "Pod has restarted {{ $value | humanize }} times in 15 minutes"
+
+    - alert: PodNotReady
+      expr: kube_pod_status_ready{condition="true"} == 0
+      for: 5m
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} not ready"
+        description: "Pod has been not ready for 5 minutes"
+
+    - alert: PodHighRestartRate
+      expr: rate(kube_pod_container_status_restarts_total[1h]) * 3600 > 5
+      for: 10m
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} restarting frequently"
+        description: "More than 5 restarts in the last hour"
+
+  - name: aiops.rules
+    rules:
+    - alert: ClusterNodeCountLow
+      expr: count(kube_node_status_condition{condition="Ready",status="true"}) < 1
+      for: 2m
+      labels:
+        severity: critical
+        team: platform
+      annotations:
+        summary: "AKS cluster has no ready nodes"
+        description: "All nodes are unavailable"
+
+    - alert: DeploymentReplicasMismatch
+      expr: kube_deployment_spec_replicas != kube_deployment_status_ready_replicas
+      for: 5m
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} replicas mismatch"
+        description: "Desired replicas not met"
+
+    - alert: ContainerNearMemoryLimit
+      expr: container_memory_working_set_bytes / container_spec_memory_limit_bytes > 0.9
+      for: 5m
+      labels:
+        severity: warning
+        team: platform
+        type: predictive
+      annotations:
+        summary: "Container {{ $labels.container }} near memory limit"
+        description: "Using {{ $value | humanizePercentage }} of memory limit"
