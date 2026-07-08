@@ -1,0 +1,39 @@
+# =============================================================================
+# ARGOCD APPLICATION — AIOps auto-remediation manifests
+#
+# Deploys the Argo Events wiring from platform/auto-remediation/:
+#   - RBAC (permissions for the workflow)
+#   - WorkflowTemplate (the remediation steps)
+#   - EventSource (receives Alertmanager webhooks)
+#   - Sensor (connects events to workflow triggers)
+#   - AlertmanagerConfig (routes alerts to Argo Events)
+#
+# sync-wave "5" = deploy after Argo Events/Workflows are installed (wave 2)
+# and after Prometheus CRDs exist (wave 1) for AlertmanagerConfig
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aiops-auto-remediation
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: aiops-platform
+    app.kubernetes.io/component: auto-remediation
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Dinesh-Prabhakaran/aiops-platform.git
+    targetRevision: main
+    path: platform/auto-remediation
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-events
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

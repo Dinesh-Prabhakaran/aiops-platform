@@ -1,0 +1,28 @@
+# =============================================================================
+# ARGO EVENTS — EventSource
+#
+# An EventSource listens for incoming events on a specific port/path.
+# This one listens for webhook calls from Alertmanager.
+#
+# Plain English: this is the "phone" that receives the call from Alertmanager.
+# When Alertmanager sends a PodCrashLooping alert to the webhook URL,
+# this EventSource receives it and passes it to the Sensor.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: EventSource
+metadata:
+  name: aiops-webhook
+  namespace: argo-events
+  labels:
+    app.kubernetes.io/part-of: aiops-platform
+    app.kubernetes.io/component: auto-remediation
+spec:
+  service:
+    ports:
+    - port: 12000
+      targetPort: 12000
+  webhook:
+    aiops-alerts:
+      port: "12000"
+      endpoint: /aiops-alerts
+      method: POST

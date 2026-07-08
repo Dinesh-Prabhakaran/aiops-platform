@@ -1,0 +1,40 @@
+# =============================================================================
+# ALERTMANAGER CONFIG — route alerts to Argo Events webhook
+#
+# This tells Alertmanager: when a PodCrashLooping alert fires,
+# send a webhook to Argo Events (which then triggers the remediation workflow).
+#
+# Plain English: Alertmanager is the pager. This config says:
+#   "When the PodCrashLooping alarm goes off, call this phone number
+#    (the Argo Events webhook) instead of calling a human."
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: aiops-remediation
+  namespace: monitoring
+  labels:
+    alertmanagerConfig: aiops-remediation
+spec:
+  route:
+    # Group alerts by namespace and alertname
+    # Prevents 10 alerts from 10 pods when 1 root cause exists
+    groupBy: ['namespace', 'alertname']
+    groupWait: 30s      # wait 30s before sending (collect related alerts)
+    groupInterval: 5m   # wait 5m before re-sending same group
+    repeatInterval: 1h  # re-send if still firing after 1h
+    receiver: argo-events-webhook
+    # Only route critical + warning pod alerts to auto-remediation
+    # Other alerts go to default receiver (silent for now)
+    matchers:
+    - name: alertname
+      value: PodCrashLooping
+      matchType: =
+
+  receivers:
+  - name: argo-events-webhook
+    webhookConfigs:
+    - url: "http://aiops-webhook-eventsource-svc.argo-events.svc.cluster.local:12000/aiops-alerts"
+      sendResolved: true    # also send when alert resolves (for reporting)
+      httpConfig:
+        followRedirects: true

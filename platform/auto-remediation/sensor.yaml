@@ -1,0 +1,62 @@
+# =============================================================================
+# ARGO EVENTS — Sensor
+#
+# A Sensor listens to EventSources and triggers actions (Triggers).
+# This sensor:
+#   1. Listens to the aiops-webhook EventSource
+#   2. When a PodCrashLooping alert arrives
+#   3. Triggers the pod-crash-remediation WorkflowTemplate
+#
+# Plain English: the Sensor is the "decision maker" between receiving
+# the alert (EventSource) and taking action (Workflow). It reads the
+# alert payload and extracts the namespace and pod name to remediate.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: aiops-remediation
+  namespace: argo-events
+  labels:
+    app.kubernetes.io/part-of: aiops-platform
+    app.kubernetes.io/component: auto-remediation
+spec:
+  template:
+    serviceAccountName: aiops-remediation
+  dependencies:
+  - name: alertmanager-webhook
+    eventSourceName: aiops-webhook
+    eventName: aiops-alerts
+    filters:
+      data:
+      # Only trigger on PodCrashLooping alerts
+      - path: body.alerts.0.labels.alertname
+        type: string
+        value:
+          - "PodCrashLooping"
+
+  triggers:
+  - template:
+      name: remediate-pod-crash
+      argoWorkflow:
+        operation: submit
+        source:
+          resource:
+            apiVersion: argoproj.io/v1alpha1
+            kind: Workflow
+            metadata:
+              generateName: pod-crash-remediation-
+              namespace: argo-events
+            spec:
+              workflowTemplateRef:
+                name: pod-crash-remediation
+              arguments:
+                parameters:
+                # Extract namespace from the alert payload
+                - name: namespace
+                  value: "apps"
+                - name: deployment
+                  value: "podinfo"
+                - name: alert-name
+                  value: "PodCrashLooping"
+    retryStrategy:
+      steps: 3

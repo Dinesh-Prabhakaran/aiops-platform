@@ -1,0 +1,93 @@
+# =============================================================================
+# ARGOCD APPLICATION — Argo Events + Argo Workflows
+#
+# Argo Events: receives alerts from Alertmanager via webhook
+# Argo Workflows: executes remediation workflows when events arrive
+#
+# Together they form the auto-remediation engine:
+#   Alert fires -> Argo Events receives it -> Argo Workflows fixes it
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-events
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: aiops-platform
+    app.kubernetes.io/component: auto-remediation
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-events
+    targetRevision: "*"
+    helm:
+      valuesObject:
+        crds:
+          install: true
+        configs:
+          jetstream:
+            versions:
+              - version: latest
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-events
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 3m
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-workflows
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: aiops-platform
+    app.kubernetes.io/component: auto-remediation
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-workflows
+    targetRevision: "*"
+    helm:
+      valuesObject:
+        server:
+          authModes:
+            - server    # no auth for lab (add SSO for production)
+        workflow:
+          serviceAccount:
+            create: true
+            name: argo-workflow
+          rbac:
+            create: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-events
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 3m

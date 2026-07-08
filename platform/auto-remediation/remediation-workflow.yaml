@@ -1,0 +1,198 @@
+# =============================================================================
+# WORKFLOW TEMPLATE — pod crash remediation
+#
+# This is the auto-remediation playbook. When triggered by Argo Events
+# (which receives the PodCrashLooping alert from Alertmanager), this
+# workflow runs automatically:
+#
+# Step 1: DIAGNOSE  — collect logs from the crashed pod
+# Step 2: REMEDIATE — delete the pod (K8s recreates it via the Deployment)
+# Step 3: VERIFY    — wait for the new pod to become Ready
+# Step 4: REPORT    — print a summary of what happened and what was done
+#
+# Plain English: imagine a nurse who, when a patient flatlines:
+#   1. Reads the patient's chart (collects logs)
+#   2. Applies the standard treatment (restarts the pod)
+#   3. Monitors until stable (waits for Ready)
+#   4. Files a report (prints summary)
+# The doctor (you) only sees the report — never had to intervene.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: pod-crash-remediation
+  namespace: argo-events
+  labels:
+    app.kubernetes.io/part-of: aiops-platform
+    app.kubernetes.io/component: auto-remediation
+spec:
+  serviceAccountName: aiops-remediation
+  entrypoint: remediate-pod-crash
+  arguments:
+    parameters:
+    - name: namespace
+      value: "apps"           # default namespace to remediate
+    - name: deployment
+      value: "podinfo"        # default deployment to remediate
+    - name: alert-name
+      value: "PodCrashLooping"
+
+  templates:
+  # ── MAIN FLOW ──────────────────────────────────────────────────────────────
+  - name: remediate-pod-crash
+    steps:
+    - - name: diagnose
+        template: collect-logs
+        arguments:
+          parameters:
+          - name: namespace
+            value: "{{workflow.parameters.namespace}}"
+          - name: deployment
+            value: "{{workflow.parameters.deployment}}"
+
+    - - name: remediate
+        template: restart-deployment
+        arguments:
+          parameters:
+          - name: namespace
+            value: "{{workflow.parameters.namespace}}"
+          - name: deployment
+            value: "{{workflow.parameters.deployment}}"
+
+    - - name: verify
+        template: verify-recovery
+        arguments:
+          parameters:
+          - name: namespace
+            value: "{{workflow.parameters.namespace}}"
+          - name: deployment
+            value: "{{workflow.parameters.deployment}}"
+
+    - - name: report
+        template: print-report
+        arguments:
+          parameters:
+          - name: namespace
+            value: "{{workflow.parameters.namespace}}"
+          - name: deployment
+            value: "{{workflow.parameters.deployment}}"
+          - name: alert-name
+            value: "{{workflow.parameters.alert-name}}"
+
+  # ── STEP 1: DIAGNOSE ───────────────────────────────────────────────────────
+  - name: collect-logs
+    inputs:
+      parameters:
+      - name: namespace
+      - name: deployment
+    script:
+      image: bitnami/kubectl:latest
+      command: [bash]
+      source: |
+        echo "=== AIOPS AUTO-REMEDIATION: DIAGNOSE ==="
+        echo "Namespace: {{inputs.parameters.namespace}}"
+        echo "Deployment: {{inputs.parameters.deployment}}"
+        echo "Time: $(date)"
+        echo ""
+        echo "=== Crashed pods ==="
+        kubectl get pods -n {{inputs.parameters.namespace}} \
+          -l app={{inputs.parameters.deployment}} \
+          --field-selector=status.phase!=Running 2>/dev/null || echo "No non-running pods found"
+        echo ""
+        echo "=== Recent pod events ==="
+        kubectl get events -n {{inputs.parameters.namespace}} \
+          --field-selector=reason=BackOff \
+          --sort-by='.lastTimestamp' 2>/dev/null | tail -10 || echo "No backoff events"
+        echo ""
+        echo "=== Last logs from crashed pod ==="
+        CRASHED_POD=$(kubectl get pods -n {{inputs.parameters.namespace}} \
+          -l app={{inputs.parameters.deployment}} \
+          -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+        if [ -n "$CRASHED_POD" ]; then
+          kubectl logs "$CRASHED_POD" \
+            -n {{inputs.parameters.namespace}} \
+            --previous \
+            --tail=20 2>/dev/null || echo "No previous logs available"
+        fi
+        echo "=== DIAGNOSE COMPLETE ==="
+
+  # ── STEP 2: REMEDIATE ──────────────────────────────────────────────────────
+  - name: restart-deployment
+    inputs:
+      parameters:
+      - name: namespace
+      - name: deployment
+    script:
+      image: bitnami/kubectl:latest
+      command: [bash]
+      source: |
+        echo "=== AIOPS AUTO-REMEDIATION: REMEDIATE ==="
+        echo "Restarting deployment: {{inputs.parameters.deployment}}"
+        echo ""
+        # Rolling restart — zero downtime, K8s recreates pods one at a time
+        kubectl rollout restart deployment/{{inputs.parameters.deployment}} \
+          -n {{inputs.parameters.namespace}}
+        echo "Rolling restart triggered"
+        echo ""
+        # Wait for rollout to complete
+        kubectl rollout status deployment/{{inputs.parameters.deployment}} \
+          -n {{inputs.parameters.namespace}} \
+          --timeout=120s
+        echo "=== REMEDIATE COMPLETE ==="
+
+  # ── STEP 3: VERIFY ─────────────────────────────────────────────────────────
+  - name: verify-recovery
+    inputs:
+      parameters:
+      - name: namespace
+      - name: deployment
+    script:
+      image: bitnami/kubectl:latest
+      command: [bash]
+      source: |
+        echo "=== AIOPS AUTO-REMEDIATION: VERIFY ==="
+        echo "Waiting for all pods to be Ready..."
+        # Wait for all pods in the deployment to be ready
+        kubectl wait pods \
+          -n {{inputs.parameters.namespace}} \
+          -l app={{inputs.parameters.deployment}} \
+          --for=condition=Ready \
+          --timeout=120s
+        echo ""
+        echo "=== Current pod status ==="
+        kubectl get pods -n {{inputs.parameters.namespace}} \
+          -l app={{inputs.parameters.deployment}}
+        echo "=== VERIFY COMPLETE — all pods Ready ==="
+
+  # ── STEP 4: REPORT ─────────────────────────────────────────────────────────
+  - name: print-report
+    inputs:
+      parameters:
+      - name: namespace
+      - name: deployment
+      - name: alert-name
+    script:
+      image: bitnami/kubectl:latest
+      command: [bash]
+      source: |
+        echo ""
+        echo "========================================"
+        echo "   AIOPS AUTO-REMEDIATION REPORT"
+        echo "========================================"
+        echo "Alert:      {{inputs.parameters.alert-name}}"
+        echo "Deployment: {{inputs.parameters.deployment}}"
+        echo "Namespace:  {{inputs.parameters.namespace}}"
+        echo "Time:       $(date)"
+        echo "Status:     RESOLVED AUTOMATICALLY"
+        echo ""
+        echo "Actions taken:"
+        echo "  1. Collected crash logs for diagnosis"
+        echo "  2. Triggered rolling restart of deployment"
+        echo "  3. Verified all pods returned to Ready state"
+        echo ""
+        echo "Current pod health:"
+        kubectl get pods -n {{inputs.parameters.namespace}} \
+          -l app={{inputs.parameters.deployment}}
+        echo ""
+        echo "No human intervention was required."
+        echo "========================================"
