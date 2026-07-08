@@ -1,0 +1,19 @@
+# ServiceMonitor — tells Prometheus to scrape podinfo metrics
+# This is the K8s-native way to register a new scrape target.
+# No changes to Prometheus config needed — just apply this file.
+# Prometheus operator picks it up automatically.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: podinfo
+  namespace: apps
+  labels:
+    release: kube-prometheus-stack   # must match Prometheus serviceMonitorSelector
+spec:
+  selector:
+    matchLabels:
+      app: podinfo
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 15s

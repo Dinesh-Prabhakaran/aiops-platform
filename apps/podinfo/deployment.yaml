@@ -1,0 +1,72 @@
+# =============================================================================
+# APPS / PODINFO — sample application for AIOps demonstration
+#
+# podinfo is purpose-built for K8s demos:
+#   GET  /healthz  — liveness check (K8s restarts pod if this fails)
+#   GET  /readyz   — readiness check (pod removed from LB if not ready)
+#   GET  /metrics  — Prometheus metrics endpoint
+#   POST /panic    — intentionally crashes the pod (for AIOps demo)
+#   POST /delay/N  — delays response by N seconds (latency demo)
+#
+# AIOps demo flow:
+#   1. Call /panic -> pod crashes
+#   2. Prometheus detects restart -> PodCrashLooping alert fires
+#   3. Argo Events receives alert -> triggers remediation workflow
+#   4. Workflow collects logs + restarts pod + sends report
+#   5. Human gets a report, not a page
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: podinfo
+  namespace: apps
+  labels:
+    app: podinfo
+    version: "6.7.0"
+    part-of: aiops-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: podinfo
+  template:
+    metadata:
+      labels:
+        app: podinfo
+        version: "6.7.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9898"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: podinfo
+        image: stefanprodan/podinfo:6.7.0
+        ports:
+        - containerPort: 9898
+          name: http
+        - containerPort: 9999
+          name: grpc
+        env:
+        - name: PODINFO_UI_COLOR
+          value: "#34577c"
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9898
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 9898
+          initialDelaySeconds: 5
+          periodSeconds: 5

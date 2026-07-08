@@ -2,66 +2,108 @@
 
 AIOps and MLOps platform on AKS, managed via GitOps (ArgoCD).
 
-## What this is
+## Three repos, three concerns
 
-Three repos, three concerns:
-
-| Repo | Purpose |
-|---|---|
-| `terraform-enterprise` | Builds the infrastructure (AKS, VMs, networking) |
-| `ansible-configuration` | Configures the Linux VM (tools, desktop, runner) |
-| `aiops-platform` | Deploys everything that runs ON the cluster (this repo) |
-
-## Architecture
-
-```
-AKS cluster (South India, K8s 1.33, workload identity)
-├── monitoring/     Prometheus + Grafana + Alertmanager
-│   ├── Metrics from every pod and node every 30s
-│   ├── Threshold alerts (CPU, memory, pod health)
-│   └── Predictive alerts via predict_linear() — ML-based
-├── logging/        Loki + Promtail
-│   ├── Logs from every container automatically
-│   └── Queryable in Grafana alongside metrics
-├── argocd/         GitOps controller
-│   ├── Watches this repo continuously
-│   ├── Auto-deploys any change you push
-│   └── Auto-heals drift (selfHeal=true)
-└── mlops/          MLflow + Kubeflow (Phase 2)
-```
-
-## What makes this AIOps
-
-| Capability | Tool | How |
+| Repo | Purpose | Who touches it |
 |---|---|---|
-| Predictive alerting | Prometheus predict_linear() | Predicts disk/memory exhaustion before it happens |
-| Log intelligence | Loki + LogQL | Pattern-based log querying across all pods |
-| Auto-remediation | Argo Events + Workflows (coming) | Automatic response to alerts without human intervention |
-| GitOps self-healing | ArgoCD selfHeal=true | Cluster always matches Git — drift auto-corrected |
+| `terraform-enterprise` | Infrastructure — AKS, VMs, networking | Platform engineer |
+| `ansible-configuration` | VM configuration — tools, desktop, runner | Platform engineer |
+| `aiops-platform` | Everything that runs ON the cluster | Platform/ML engineer |
 
-## Deploy
+## Repo structure
+
+```
+aiops-platform/
+│
+├── bootstrap/                   One-time cluster setup
+│   └── namespaces.yaml          All namespaces defined in Git
+│
+├── platform/                    Tools that RUN the platform
+│   ├── monitoring/
+│   │   ├── helmrelease.yaml     Prometheus + Grafana + Alertmanager values
+│   │   └── alert-rules.yaml    Threshold + predictive (AI) alert rules
+│   └── logging/
+│       └── helmrelease.yaml     Loki + Promtail values
+│
+├── apps/                        Workloads that run ON the platform
+│   └── podinfo/                 Demo app for AIOps demonstration
+│       ├── deployment.yaml
+│       ├── service.yaml
+│       └── servicemonitor.yaml  Prometheus scrape config
+│
+└── argocd/                      ArgoCD wiring (the GitOps engine)
+    ├── root-app.yaml            App of Apps — bootstraps everything
+    └── applications/
+        ├── platform/            One Application per platform tool
+        │   ├── monitoring.yaml
+        │   ├── logging.yaml
+        │   └── alert-rules.yaml
+        └── apps/                One Application per workload
+            └── podinfo.yaml
+```
+
+## Why this structure
+
+**platform/ vs apps/** — clear separation between infrastructure tools
+(Prometheus, Loki) and the workloads they monitor (podinfo, future services).
+Different teams, different change rates, different owners.
+
+**argocd/applications/platform/ vs apps/** — ArgoCD Application manifests
+are separate from the actual K8s manifests. This means you can change
+deployment values (in platform/) without touching ArgoCD wiring (in argocd/).
+
+**Sync waves** — deployment order is enforced:
+```
+Wave 1: Prometheus + Grafana (monitoring foundation)
+Wave 2: Loki + Promtail (logging)
+Wave 3: Alert rules (needs Prometheus CRDs from wave 1)
+Wave 4: Applications (monitored from day one)
+```
+
+## Bootstrap (after every AKS rebuild)
+
+Handled automatically by the aks.yml pipeline bootstrap-aiops job:
 
 ```bash
-# 1. Bootstrap namespaces
-kubectl apply -f bootstrap/namespaces.yaml
-
-# 2. Connect ArgoCD to this repo (one-time setup)
-kubectl apply -f gitops/applications/
-
-# 3. ArgoCD handles everything else automatically
+# What the pipeline does automatically:
+helm install argocd argo/argo-cd --namespace argocd
+kubectl apply -f argocd/root-app.yaml
+# ArgoCD handles everything else
 ```
 
-## Stack versions
+## Adding a new tool (the GitOps way)
 
-| Tool | Version | Namespace |
+```
+1. Add K8s manifests or Helm values to platform/<tool>/ or apps/<tool>/
+2. Add an ArgoCD Application to argocd/applications/platform/ or apps/
+3. git add . && git commit && git push
+4. ArgoCD syncs automatically — no kubectl needed
+```
+
+## AIOps stack
+
+| Tool | Purpose | Namespace |
 |---|---|---|
-| Prometheus + Grafana | kube-prometheus-stack latest | monitoring |
-| Loki | loki-stack latest | logging |
-| ArgoCD | argo-cd latest | argocd |
-| MLflow | coming | mlops |
-| Kubeflow | coming | mlops |
+| Prometheus | Metrics collection + alerting | monitoring |
+| Grafana | Dashboards + visualization | monitoring |
+| Alertmanager | Alert routing (email/Slack/PagerDuty) | monitoring |
+| Loki | Log aggregation (ELK equivalent) | logging |
+| Promtail | Log collection DaemonSet | logging |
+| ArgoCD | GitOps delivery + self-healing | argocd |
+| Argo Events | Alert-triggered automation (coming) | argo-events |
+| Argo Workflows | Auto-remediation workflows (coming) | argo-events |
 
-## MLOps Phase 2
+## What makes this AIOps (not just DevOps)
+
+| Capability | Implementation |
+|---|---|
+| Predictive alerting | `predict_linear()` in alert-rules.yaml — fires before disk/memory exhausts |
+| Log intelligence | Loki + LogQL — pattern query across all pods |
+| Auto-remediation | Argo Events + Workflows (coming) — automatic response without human |
+| GitOps self-healing | ArgoCD `selfHeal: true` — cluster always matches Git |
+| Alert correlation | Alertmanager grouping rules (coming) |
+
+## MLOps (Phase 2 — coming)
 
 - MLflow — experiment tracking, model registry
 - Kubeflow — ML pipeline orchestration (K8s-native)

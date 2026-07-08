@@ -1,0 +1,53 @@
+# =============================================================================
+# PLATFORM / MONITORING — kube-prometheus-stack Helm values
+#
+# Defines what Prometheus, Grafana, and Alertmanager look like.
+# ArgoCD reads this via argocd/applications/platform/monitoring.yaml
+# and deploys it to the monitoring namespace.
+#
+# Enterprise pattern: values live here (platform/monitoring/),
+# the ArgoCD Application wiring lives in argocd/applications/platform/.
+# Separation makes it easy to change values without touching ArgoCD config.
+# =============================================================================
+
+grafana:
+  adminPassword: "AIOps@2026!"
+
+  # Loki datasource — auto-wired so Grafana shows logs alongside metrics
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      url: http://loki.logging.svc.cluster.local:3100
+      access: proxy
+      isDefault: false
+
+  # Persistence so dashboards survive pod restarts
+  persistence:
+    enabled: false    # disabled for cost control on single-node lab
+
+prometheus:
+  prometheusSpec:
+    retention: "7d"
+    # Allow Prometheus to discover ServiceMonitors from all namespaces
+    # Required so podinfo metrics are scraped from the apps namespace
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    # Same for PrometheusRules — pick up rules from all namespaces
+    ruleSelectorNilUsesHelmValues: false
+    ruleSelector: {}
+    ruleNamespaceSelector: {}
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    # Alertmanager config — routes alerts to receivers
+    # Currently logs to default receiver (no external notification yet)
+    # Wire to email/Slack/PagerDuty by adding receivers below
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi

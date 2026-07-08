@@ -1,4 +1,10 @@
-# ArgoCD Application for podinfo demo app
+# =============================================================================
+# ARGOCD APPLICATION — podinfo (demo app)
+#
+# Deploys the podinfo sample application from apps/podinfo/.
+# sync-wave "4" = deploy after platform tools (waves 1-3) are ready,
+# so Prometheus is already scraping when podinfo comes up.
+# =============================================================================
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -6,14 +12,15 @@ metadata:
   namespace: argocd
   labels:
     app.kubernetes.io/part-of: aiops-platform
+    app.kubernetes.io/component: demo-app
   annotations:
-    argocd.argoproj.io/sync-wave: "3"   # deploy after monitoring is ready
+    argocd.argoproj.io/sync-wave: "4"
 spec:
   project: default
   source:
     repoURL: https://github.com/Dinesh-Prabhakaran/aiops-platform.git
     targetRevision: main
-    path: apps
+    path: apps/podinfo
   destination:
     server: https://kubernetes.default.svc
     namespace: apps

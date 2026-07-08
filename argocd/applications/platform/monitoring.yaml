@@ -1,3 +1,12 @@
+# =============================================================================
+# ARGOCD APPLICATION — kube-prometheus-stack
+#
+# Deploys Prometheus + Grafana + Alertmanager from the Helm chart.
+# Values come from platform/monitoring/helmrelease.yaml in this repo.
+# Alert rules come from platform/monitoring/alert-rules.yaml.
+#
+# sync-wave "1" = deploy first (before apps that need monitoring)
+# =============================================================================
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -5,6 +14,7 @@ metadata:
   namespace: argocd
   labels:
     app.kubernetes.io/part-of: aiops-platform
+    app.kubernetes.io/component: monitoring
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
@@ -14,6 +24,7 @@ spec:
     chart: kube-prometheus-stack
     targetRevision: "*"
     helm:
+      valueFiles: []
       valuesObject:
         grafana:
           adminPassword: "AIOps@2026!"
@@ -26,6 +37,12 @@ spec:
         prometheus:
           prometheusSpec:
             retention: "7d"
+            serviceMonitorSelectorNilUsesHelmValues: false
+            serviceMonitorSelector: {}
+            serviceMonitorNamespaceSelector: {}
+            ruleSelectorNilUsesHelmValues: false
+            ruleSelector: {}
+            ruleNamespaceSelector: {}
         alertmanager:
           enabled: true
   destination:
@@ -37,16 +54,14 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      - ServerSideApply=true   # fixes: CRD annotations too long (>256KB limit)
-      - Replace=true           # fixes: CRD replace instead of patch
-      - RespectIgnoreDifferences=true
+      - ServerSideApply=true
+      - Replace=true
     retry:
       limit: 3
       backoff:
         duration: 30s
         factor: 2
         maxDuration: 3m
-  # Tell ArgoCD to ignore CRD differences that cause false OutOfSync
   ignoreDifferences:
     - group: apiextensions.k8s.io
       kind: CustomResourceDefinition

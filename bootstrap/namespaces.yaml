@@ -1,15 +1,38 @@
+# =============================================================================
+# BOOTSTRAP — namespaces as code
+#
+# Applied once during cluster setup (by the aks.yml bootstrap job).
+# All namespaces the platform needs, defined in Git.
+# Labels enable ArgoCD to manage resources in these namespaces.
+# =============================================================================
 apiVersion: v1
 kind: Namespace
 metadata:
   name: monitoring
   labels:
-    purpose: aiops
+    purpose: platform
     managed-by: argocd
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: logging
+  labels:
+    purpose: platform
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  labels:
+    purpose: gitops
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argo-events
   labels:
     purpose: aiops
     managed-by: argocd
@@ -20,4 +43,12 @@ metadata:
   name: mlops
   labels:
     purpose: mlops
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apps
+  labels:
+    purpose: demo
     managed-by: argocd
