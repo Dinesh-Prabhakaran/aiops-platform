@@ -28,7 +28,7 @@ spec:
     # Other alerts go to default receiver (silent for now)
     matchers:
     - name: alertname
-      value: PodCrashLooping
+      value: KubePodCrashLooping
       matchType: =
 
   receivers:

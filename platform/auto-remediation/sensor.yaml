@@ -57,6 +57,6 @@ spec:
                 - name: deployment
                   value: "podinfo"
                 - name: alert-name
-                  value: "PodCrashLooping"
+                  value: "KubePodCrashLooping"
     retryStrategy:
       steps: 3
