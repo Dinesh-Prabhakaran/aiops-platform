@@ -1,21 +1,13 @@
 # =============================================================================
 # ARGOCD ROOT APPLICATION — App of Apps pattern
 #
-# This is the single bootstrap command. Apply this once and ArgoCD
-# discovers everything else automatically by reading the applications/
-# directory in this repo.
-#
-# Plain English:
-#   This Application tells ArgoCD: "watch the argocd/applications/
-#   directory in the aiops-platform repo. For every yaml file you find
-#   there, create an ArgoCD Application." Those child Applications
-#   then deploy Prometheus, Loki, podinfo etc.
+# Bootstrap entry point. Apply once, ArgoCD manages everything else.
+# Watches argocd/applications/ recursively — picks up platform/ and apps/ subdirs.
 #
 # Adding a new tool:
-#   1. Add manifest files to platform/ or apps/
-#   2. Add an Application yaml to argocd/applications/platform/ or apps/
-#   3. Push to Git
-#   4. ArgoCD picks it up automatically — no manual kubectl needed
+#   1. Add manifests to platform/<tool>/ or apps/<tool>/
+#   2. Add ArgoCD Application to argocd/applications/platform/ or apps/
+#   3. git push — ArgoCD deploys automatically
 # =============================================================================
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -32,7 +24,9 @@ spec:
   source:
     repoURL: https://github.com/Dinesh-Prabhakaran/aiops-platform.git
     targetRevision: main
-    path: argocd/applications   # watches ALL subdirs: platform/ and apps/
+    path: argocd/applications
+    directory:
+      recurse: true    # recurse into platform/ and apps/ subdirectories
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
