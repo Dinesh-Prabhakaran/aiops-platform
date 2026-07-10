@@ -1,9 +1,6 @@
 # =============================================================================
 # POSTGRESQL — MLflow backend store
-#
-# Stores experiment metadata: run IDs, parameters, metrics, tags.
-# MLflow requires a proper database backend for production use.
-# SQLite is not suitable — file-based, no concurrency, lost on pod restart.
+# Password uses URL-safe characters to avoid connection string parsing issues
 # =============================================================================
 apiVersion: v1
 kind: Secret
@@ -14,8 +11,8 @@ type: Opaque
 stringData:
   POSTGRES_DB: mlflow
   POSTGRES_USER: mlflow
-  POSTGRES_PASSWORD: "MLflow@2026!"
-  DATABASE_URL: "postgresql://mlflow:MLflow@2026!@postgresql.mlops.svc.cluster.local:5432/mlflow"
+  POSTGRES_PASSWORD: "MLflow2026"
+  DATABASE_URL: "postgresql://mlflow:MLflow2026@postgresql.mlops.svc.cluster.local:5432/mlflow"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
