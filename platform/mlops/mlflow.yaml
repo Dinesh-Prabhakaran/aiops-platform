@@ -1,11 +1,8 @@
 # =============================================================================
 # MLFLOW TRACKING SERVER
 #
-# Uses bitnami/mlflow image which includes psycopg2 and azure-storage-blob
-# pre-installed — no missing dependency issues.
-#
-# Backend store:   PostgreSQL (experiment metadata)
-# Artifact store:  Azure Blob Storage (model files)
+# Uses python:3.10-slim with pip install in a single init step.
+# Packages installed to /app/venv, main container activates venv.
 # =============================================================================
 apiVersion: apps/v1
 kind: Deployment
@@ -31,12 +28,10 @@ spec:
         command:
         - sh
         - -c
-        - |
-          pip install --quiet mlflow psycopg2-binary azure-storage-blob azure-identity && \
-          cp -r /usr/local/lib/python3.10/site-packages /mnt/site-packages/
+        - "pip install --quiet --target=/app/packages mlflow==2.14.1 psycopg2-binary azure-storage-blob azure-identity"
         volumeMounts:
-        - name: site-packages
-          mountPath: /mnt/site-packages
+        - name: packages
+          mountPath: /app/packages
       containers:
       - name: mlflow
         image: python:3.10-slim
@@ -46,14 +41,7 @@ spec:
         command:
         - sh
         - -c
-        - |
-          export PYTHONPATH=/mnt/site-packages
-          python -m mlflow server \
-            --host=0.0.0.0 \
-            --port=5000 \
-            --backend-store-uri=$(DATABASE_URL) \
-            --default-artifact-root=$(ARTIFACT_ROOT) \
-            --serve-artifacts
+        - "PYTHONPATH=/app/packages python -m mlflow server --host=0.0.0.0 --port=5000 --backend-store-uri=$(DATABASE_URL) --default-artifact-root=$(ARTIFACT_ROOT) --serve-artifacts"
         env:
         - name: DATABASE_URL
           valueFrom:
@@ -85,10 +73,10 @@ spec:
           initialDelaySeconds: 30
           periodSeconds: 10
         volumeMounts:
-        - name: site-packages
-          mountPath: /mnt/site-packages
+        - name: packages
+          mountPath: /app/packages
       volumes:
-      - name: site-packages
+      - name: packages
         emptyDir: {}
 ---
 apiVersion: v1
