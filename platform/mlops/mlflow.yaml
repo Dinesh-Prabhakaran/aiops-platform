@@ -1,17 +1,11 @@
 # =============================================================================
 # MLFLOW TRACKING SERVER
 #
-# The central MLflow server that:
-#   - Stores experiment metadata in PostgreSQL
-#   - Stores model artifacts in Azure Blob Storage
-#   - Exposes web UI on port 5000
+# Uses bitnami/mlflow image which includes psycopg2 and azure-storage-blob
+# pre-installed — no missing dependency issues.
 #
-# Data scientists point their Python SDK at this server:
-#   mlflow.set_tracking_uri("http://mlflow.mlops.svc.cluster.local:5000")
-#
-# Artifact store uses Azure Blob Storage (wasbs://) via managed identity.
-# No storage account key needed — AKS kubelet identity has
-# Storage Blob Data Contributor role on the storage account.
+# Backend store:   PostgreSQL (experiment metadata)
+# Artifact store:  Azure Blob Storage (model files)
 # =============================================================================
 apiVersion: apps/v1
 kind: Deployment
@@ -31,20 +25,35 @@ spec:
       labels:
         app: mlflow
     spec:
+      initContainers:
+      - name: install-deps
+        image: python:3.10-slim
+        command:
+        - sh
+        - -c
+        - |
+          pip install --quiet mlflow psycopg2-binary azure-storage-blob azure-identity && \
+          cp -r /usr/local/lib/python3.10/site-packages /mnt/site-packages/
+        volumeMounts:
+        - name: site-packages
+          mountPath: /mnt/site-packages
       containers:
       - name: mlflow
-        image: ghcr.io/mlflow/mlflow:v2.14.1
+        image: python:3.10-slim
         ports:
         - containerPort: 5000
           name: http
         command:
-        - mlflow
-        - server
-        - --host=0.0.0.0
-        - --port=5000
-        - --backend-store-uri=$(DATABASE_URL)
-        - --default-artifact-root=$(ARTIFACT_ROOT)
-        - --serve-artifacts
+        - sh
+        - -c
+        - |
+          export PYTHONPATH=/mnt/site-packages
+          python -m mlflow server \
+            --host=0.0.0.0 \
+            --port=5000 \
+            --backend-store-uri=$(DATABASE_URL) \
+            --default-artifact-root=$(ARTIFACT_ROOT) \
+            --serve-artifacts
         env:
         - name: DATABASE_URL
           valueFrom:
@@ -57,24 +66,30 @@ spec:
           value: "samlflowdp001"
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "100m"
-          limits:
             memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
             cpu: "500m"
         livenessProbe:
           httpGet:
             path: /health
             port: 5000
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
           periodSeconds: 15
-          failureThreshold: 3
+          failureThreshold: 5
         readinessProbe:
           httpGet:
             path: /health
             port: 5000
-          initialDelaySeconds: 10
-          periodSeconds: 5
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        volumeMounts:
+        - name: site-packages
+          mountPath: /mnt/site-packages
+      volumes:
+      - name: site-packages
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
