@@ -1,0 +1,39 @@
+# =============================================================================
+# ARGOCD APPLICATION — MLflow platform
+#
+# Deploys PostgreSQL + MLflow from platform/mlops/ directory.
+# sync-wave "3" — deploys after monitoring (wave 1) and logging (wave 2)
+# ArgoCD manages the full lifecycle: deploy, upgrade, self-heal.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mlflow
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: aiops-platform
+    app.kubernetes.io/component: mlops
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Dinesh-Prabhakaran/aiops-platform.git
+    targetRevision: main
+    path: platform/mlops
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mlops
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 3m
